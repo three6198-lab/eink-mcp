@@ -398,7 +398,9 @@ async def events(request: Request):
 # ---- 控制页 & 健康检查 ----------------------------------------------------
 
 
-@app.get("/healthz")
+# 必须同时支持 HEAD：Render 的健康检查、以及 UptimeRobot 之类的保活监控都发 HEAD。
+# FastAPI 的 @app.get 只注册 GET，HEAD 会返回 405（响应体照常由 uvicorn 按 HEAD 语义丢弃）。
+@app.api_route("/healthz", methods=["GET", "HEAD"])
 def healthz():
     return {
         "ok": True,
@@ -408,7 +410,7 @@ def healthz():
     }
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def index():
     if os.path.exists(INDEX_FILE):
         return FileResponse(INDEX_FILE)

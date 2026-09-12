@@ -228,8 +228,9 @@
       iOS 的 Safari 不支持 Web Bluetooth，请用 <code>Bluefy</code> 打开本页。<br><br>
       每次使用：连接墨水屏 → 开始监听 → 在 AI 对话里说「发到墨水屏」。<br><br>
       <b>卡片版式</b>：内容整段以 <code>[card]</code> 开头即启用，共两套模板：<br>
-      · <code>@template claude</code>（默认）—— 顶部红色星芒，页脚小星芒<br>
-      · <code>@template wolf</code> —— 顶部手绘小狼头，页脚爪印<br>
+      · <code>@template claude</code>（默认）—— 顶部红色星芒，页脚小星芒，红色签名<br>
+      · <code>@template wolf</code> —— 顶部黑色小狼头（比星芒大一圈），页脚黑色爪印，
+      签名固定 <code>Vey</code>；整张卡片只有上下两条分隔线是红的<br>
       <code>@icon claude|wolf|paw|star|heart|none</code> 可单独覆盖顶部图标；
       <code>@footer 日期 | 签名</code> 指定页脚（竖线左靠左、右靠右；只写 <code>@footer</code> 则左栏自动填当天日期）。<br>
       日期写 <code>{today}</code> 而不是写死的日期，跨天会自动更新。
@@ -427,12 +428,14 @@ function renderText() {
 //
 // 语法（整段以 [card] 开头即启用）：
 //   [card]
-//   @template claude                 可选：claude(默认，星芒) | wolf(小狼头 + 爪印)
+//   @template claude                 可选：claude(默认，红/星芒) | wolf(黑/狼头 + 爪印，签名 Vey)
 //   @icon claude                     可选：单独覆盖顶部图标 claude|wolf|paw|star|heart|none
 //   @footer {today} | Claude         可选：竖线左边靠左、右边靠右；只写 @footer 则左栏自动填当天日期
 //   正文若干行……                      衬线、居中、自动缩放
 //
 // 页脚右侧的小图标由 @template 决定（claude→星芒，wolf→爪印），不用单独指定。
+// 着墨色也整套跟着模板走：claude 模板是红图标 + 红签名；
+// wolf 模板除上下两条分隔线仍为红色外，顶部狼头、页脚爪印、签名、正文全部黑色。
 //
 // 正文和页脚里都可以写 {today} 或 {date}，渲染时替换成当天日期（本地时区，YYYY-MM-DD）。
 // 因为是「渲染时」才替换，卡片不用重新推送也能一直显示当天日期。
@@ -519,23 +522,31 @@ function drawMark(d, cx, cy, r, color, rule) {
 }
 
 // 顶部/页脚图标分发：claude | wolf | paw | star | heart | none
-function drawCardIcon(kind, cx, cy, r) {
+// ink 决定图标着墨色：默认红墨（Claude 模板），小狼模板传黑墨。
+function drawCardIcon(kind, cx, cy, r, ink) {
+  const c = ink || RED_INK;
   if (!kind || kind === 'none') return;
-  if (kind === 'heart') { drawHeart(cx, cy, r, RED_INK); return; }
-  if (kind === 'star' || kind === 'burst') { drawBurst(cx, cy, r, 12, Math.max(1, Math.round(r * 0.1)), RED_INK); return; }
-  if (kind === 'wolf' && drawMark(WOLF_MARK_D, cx, cy, r, RED_INK, 'evenodd')) return;
-  if (kind === 'paw' && drawMark(PAW_MARK_D, cx, cy, r, RED_INK, 'evenodd')) return;
-  if (drawMark(CLAUDE_MARK_D, cx, cy, r, RED_INK)) return;   // claude / sun / 其它未知值
-  drawBurst(cx, cy, r, 12, Math.max(1, Math.round(r * 0.1)), RED_INK);
+  if (kind === 'heart') { drawHeart(cx, cy, r, c); return; }
+  if (kind === 'star' || kind === 'burst') { drawBurst(cx, cy, r, 12, Math.max(1, Math.round(r * 0.1)), c); return; }
+  if (kind === 'wolf' && drawMark(WOLF_MARK_D, cx, cy, r, c, 'evenodd')) return;
+  if (kind === 'paw' && drawMark(PAW_MARK_D, cx, cy, r, c, 'evenodd')) return;
+  if (drawMark(CLAUDE_MARK_D, cx, cy, r, c)) return;   // claude / sun / 其它未知值
+  drawBurst(cx, cy, r, 12, Math.max(1, Math.round(r * 0.1)), c);
 }
 
-// 卡片模板：一套「顶部图标 + 页脚小图标」的固定搭配。
+// 卡片模板：一套「顶部图标 + 页脚小图标 + 着墨色」的固定搭配。
 // 想让 AI 知道有哪几种可选，看 server.py 里 push_to_eink 的工具说明，两边要一起改。
+//   ink       顶部图标的着墨色
+//   footerInk 页脚小图标与右侧签名的着墨色
+//   topScale  顶部图标相对基准半径的倍数（狼头比星芒扁，同半径下显得小，所以放大一点）
 const CARD_TEMPLATES = {
   claude: { name: 'Claude', top: 'claude', footer: 'claude', sign: 'Claude',
-            desc: '顶部红色星芒（Claude 标识）、页脚小星芒' },
-  wolf:   { name: '小狼',   top: 'wolf',   footer: 'paw',    sign: '小狼',
-            desc: '顶部手绘小狼头、页脚爪印' },
+            ink: RED_INK, footerInk: RED_INK, topScale: 1,
+            desc: '顶部红色星芒（Claude 标识）、页脚小星芒、红色签名' },
+  wolf:   { name: '小狼',   top: 'wolf',   footer: 'paw',    sign: 'Vey',
+            ink: '#000000', footerInk: '#000000', topScale: 1.4,
+            desc: '顶部黑色手绘小狼头、页脚黑色爪印、黑色签名 Vey；' +
+                  '整张卡片只有上下两条分隔线是红色，图标与文字全黑' },
 };
 
 // 当天日期（本地时区，YYYY-MM-DD）。不用 toLocaleDateString('sv-SE') 那类小技巧，
@@ -605,6 +616,10 @@ function parseCard(raw) {
     icon: icon || tpl.top,
     // 页脚小图标由模板决定，不单独暴露给推送方
     footerIcon: tpl.footer,
+    // 着墨色与顶部图标尺寸倍数，同样由模板带出来
+    ink: tpl.ink,
+    footerInk: tpl.footerInk,
+    topScale: tpl.topScale || 1,
     body: applyDateTokens(body.join('\n')),
     footerLeft: applyDateTokens(footerLeft),
     footerRight: applyDateTokens(footerRight),
@@ -663,9 +678,9 @@ function renderCard(card) {
 
   // ---- 顶部图标 ----
   const hasIcon = !!card.icon && card.icon !== 'none';
-  const iconR = Math.max(5, Math.round(h * 0.065));
+  const iconR = Math.max(5, Math.round(h * 0.065 * (card.topScale || 1)));
   const iconCy = ruleY1 + iconR + Math.max(6, Math.round(h * 0.05));
-  if (hasIcon) drawCardIcon(card.icon, w / 2, iconCy, iconR);
+  if (hasIcon) drawCardIcon(card.icon, w / 2, iconCy, iconR, card.ink);
 
   // ---- 正文：自动缩放 ----
   const bodyTop = (hasIcon ? iconCy + iconR : ruleY1) + Math.max(6, Math.round(h * 0.045));
@@ -722,9 +737,10 @@ function renderCard(card) {
     const r = Math.max(4, Math.round(h * 0.028));
     const gap = Math.max(3, Math.round(r * 1.2));
     const iconCx = rightEnd - tw - gap - r;
-    if (iconCx - r > M) drawCardIcon(card.footerIcon || 'claude', iconCx, footerY, r);
+    const fInk = card.footerInk || RED_INK;
+    if (iconCx - r > M) drawCardIcon(card.footerIcon || 'claude', iconCx, footerY, r, fInk);
     ctx.font = italicFont;
-    ctx.fillStyle = RED_INK;
+    ctx.fillStyle = fInk;
     ctx.fillText(card.footerRight, rightEnd - tw, footerY);
   }
 

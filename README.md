@@ -46,23 +46,57 @@ uvicorn server:app --host 0.0.0.0 --port 8905
 
 ## 二、部署到 Render
 
-### 方式 A：用 render.yaml 蓝图（推荐）
+### 方式 A：用 render.yaml 蓝图
 
 1. 把本项目推到你的 GitHub 仓库
 2. Render → New → **Blueprint** → 选该仓库
 3. Render 读取 `render.yaml`，自动创建服务并**生成一个随机 `EINK_TOKEN`**
 4. 部署完成后进 **Environment** 页面，把 `EINK_TOKEN` 的值复制出来
 
-### 方式 B：手动建 Web Service
+> 部分账号走到 Blueprint 会被要求添加信用卡（蓝图能创建付费资源，Render 会先做校验）。
+> 只跑一个免费 Web Service 的话，直接走**方式 B**，免费版不需要绑卡。
+
+### 方式 B：手动建 Web Service（不需要绑卡）
+
+Render → New → **Web Service**（不要选 Key Value / Postgres / Blueprint）→ 选仓库，然后按下表填：
 
 | 配置项 | 值 |
 |---|---|
-| Environment | Python |
+| Name | `eink-mcp` |
+| Region | Singapore（离国内最近） |
+| Branch | `main` |
+| Root Directory | 留空 |
+| Runtime | Python 3 |
 | Build Command | `pip install -r requirements.txt` |
 | Start Command | `uvicorn server:app --host 0.0.0.0 --port $PORT` |
-| Health Check Path | `/healthz` |
+| Instance Type | **Free** |
+| Environment Variable | `EINK_TOKEN` = 自己指定的一串随机字符 |
+| Health Check Path | 可留空；填则用 `/healthz`（该路径不需 token） |
 
-在 **Environment** 里手动加一条 `EINK_TOKEN`。
+⚠️ **`EINK_TOKEN` 必须手动填死。** `server.py` 读不到这个变量时会临时随机生成一个，
+而免费版每次休眠重启都是新进程——token 一变，Claude 连接器和手机页面会全部失效。
+
+#### 如果创建服务时被要求绑卡
+
+官方文档写「免费版不需要卡」，但实测：**注册时所用节点不干净的新账号会被风控要求绑一张卡**
+做反滥用验证（预授权 $1，验证后退回，免费额度内不产生费用）。判定挂在**账号**上——
+换浏览器、换 IP 登录同一个账号都不会改变结果。三条出路：
+
+1. **绑卡**：手上有 Visa/MasterCard 双币卡时最省事，5 分钟收工。
+2. **用干净节点重新注册一个账号**（是重新注册，不是重新登录）：
+   注册全程挂着同一个干净节点、不切回国内；建议用**邮箱 + 密码**注册而不是 GitHub 登录。
+   如果新账号连接 GitHub 时提示已占用，去 GitHub → Settings → Applications → Render
+   移除旧授权再重连。
+3. **改用公开仓库部署，彻底绕开 GitHub 授权**：把仓库设为 Public，
+   New → Web Service → 选 **Public Git Repository** → 粘贴仓库地址。
+   代价：失去推送自动部署，改代码后要在 Render 里手动 Deploy 一次。
+   注意本项目的上游是 GPL-3.0，公开分发不违反许可证。
+
+仓库是私有的：如果选仓库时列表里看不到 `eink-mcp`，去 GitHub → Settings → Applications → Render
+把仓库访问范围放开（Render 侧也有 "Configure account" 入口）。
+
+**可以先不绑域名**：`https://eink-mcp-xxxx.onrender.com` 自带 HTTPS，Web Bluetooth 和
+Claude 自定义连接器都能直接用。等链路跑通再按下面绑域名。
 
 ### 绑定域名
 

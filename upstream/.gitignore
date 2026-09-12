@@ -1,0 +1,4 @@
+latest_letter.json
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: eink-mcp
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      # Render 会自动生成一个随机密钥；部署完成后到 Environment 页面复制出来用
+      - key: EINK_TOKEN
+        generateValue: true

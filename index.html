@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>墨水屏控制台</title>
+<style>
+  :root {
+    --bg: #111110;
+    --surface: #1a1a18;
+    --surface2: #232321;
+    --border: #2e2e2b;
+    --text: #d4d0c8;
+    --text2: #8a8780;
+    --accent: #c85a3a;
+    --accent-dim: #a04830;
+    --green: #5a9e6f;
+    --eink-bg: #f0ece4;
+    --radius: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "DM Sans", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; padding: 0;
+  }
+  header { padding: 24px 24px 0; text-align: center; }
+  header h1 { font-size: 20px; font-weight: 500; letter-spacing: 0.5px; }
+  header h1 span { color: var(--accent); }
+  header p { font-size: 12px; color: var(--text2); margin-top: 4px; }
+  .container { max-width: 480px; margin: 0 auto; padding: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+  .card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text2); margin-bottom: 10px; }
+
+  .preview-wrap { display: flex; justify-content: center; padding: 12px; background: var(--surface2); border-radius: var(--radius); border: 1px solid var(--border); }
+  #preview { max-width: 100%; height: auto; border-radius: 2px; background: var(--eink-bg); image-rendering: pixelated; }
+
+  .tabs { display: flex; gap: 2px; background: var(--surface2); border-radius: 6px; padding: 2px; margin-bottom: 12px; }
+  .tab { flex: 1; padding: 8px; text-align: center; font-size: 12px; font-weight: 500; color: var(--text2); border: none; background: none; border-radius: 4px; cursor: pointer; }
+  .tab.active { background: var(--surface); color: var(--text); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: inherit; font-size: 15px; padding: 12px; resize: vertical; min-height: 80px; outline: none; }
+  textarea:focus { border-color: var(--accent); }
+  textarea::placeholder { color: var(--text2); }
+
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .control-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 70px; }
+  .control-group label { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: 1px; }
+  select, input[type="number"], input[type="text"] { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: inherit; font-size: 13px; padding: 6px 8px; outline: none; width: 100%; }
+  select:focus, input:focus { border-color: var(--accent); }
+
+  .upload-area { border: 2px dashed var(--border); border-radius: 6px; padding: 24px; text-align: center; cursor: pointer; position: relative; }
+  .upload-area:hover { border-color: var(--accent); }
+  .upload-area input { display: none; }
+  .upload-area p { font-size: 12px; color: var(--text2); }
+  .dither-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .dither-row label { font-size: 11px; color: var(--text2); white-space: nowrap; }
+  .dither-row select { flex: 1; }
+
+  .status-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--surface2); border-radius: 6px; margin-bottom: 10px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; flex-shrink: 0; }
+  .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.warn { background: var(--accent); }
+  .status-row span { font-size: 12px; color: var(--text2); flex: 1; }
+  .status-row .mono { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--text); font-size: 11px; }
+
+  .btn-row { display: flex; gap: 8px; }
+  button.btn { flex: 1; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); color: var(--text); font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  button.btn:hover { border-color: var(--text2); }
+  button.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.btn.primary:disabled { background: var(--accent-dim); border-color: var(--accent-dim); }
+
+  .progress-wrap { height: 3px; background: var(--surface2); border-radius: 2px; margin-top: 8px; overflow: hidden; display: none; }
+  .progress-bar { height: 100%; background: var(--accent); width: 0%; border-radius: 2px; }
+
+  .config-row { display: flex; gap: 8px; align-items: end; }
+  .log-box { max-height: 120px; overflow-y: auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.7; color: var(--text2); background: var(--surface2); border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
+  .log-box b { color: var(--text); font-weight: 500; }
+  .info-text { font-size: 11px; color: var(--text2); line-height: 1.7; }
+  .info-text code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10px; background: var(--surface2); padding: 1px 4px; border-radius: 3px; }
+  footer { text-align: center; padding: 16px; font-size: 10px; color: #444; }
+  .switch { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); }
+  .switch input { width: auto; flex: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>墨水屏<span>控制台</span></h1>
+  <p>AI 推送 → 服务器 → 手机蓝牙 → 墨水屏</p>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <div class="card-label">屏幕预览 400 × 300</div>
+    <div class="preview-wrap">
+      <canvas id="preview" width="400" height="300"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">推送监听</div>
+    <div class="status-row">
+      <div class="dot" id="sseDot"></div>
+      <span id="sseStatusText">未监听</span>
+    </div>
+    <div class="control-group">
+      <label>Token</label>
+      <input type="text" id="sseToken" placeholder="与服务器 EINK_TOKEN 一致" spellcheck="false">
+    </div>
+    <div class="controls">
+      <div class="control-group" style="flex:2">
+        <button class="btn primary" id="btnListen" onclick="toggleListen()">开始监听</button>
+      </div>
+      <div class="control-group" style="flex:1; justify-content:flex-end">
+        <label class="switch"><input type="checkbox" id="autoSend" checked> 自动推送</label>
+      </div>
+    </div>
+    <div class="log-box" id="sseLog">等待连接…</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">内容</div>
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('text')">文字</button>
+      <button class="tab" onclick="switchTab('image')">图片</button>
+    </div>
+
+    <div id="tab-text" class="tab-content active">
+      <textarea id="textInput" placeholder="输入内容…&#10;支持 &lt;r&gt;红&lt;/r&gt; &lt;b&gt;粗&lt;/b&gt; &lt;i&gt;斜&lt;/i&gt;，可嵌套" spellcheck="false">Hello, World!</textarea>
+      <div class="controls">
+        <div class="control-group">
+          <label>字号</label>
+          <select id="fontSize">
+            <option value="16">16</option><option value="20">20</option>
+            <option value="24">24</option><option value="28" selected>28</option>
+            <option value="32">32</option><option value="36">36</option>
+            <option value="48">48</option><option value="64">64</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label>字体</label>
+          <select id="fontFamily">
+            <option value='"Songti SC","Noto Serif CJK SC",Georgia,serif' selected>衬线</option>
+            <option value='"PingFang SC","Noto Sans CJK SC",Arial,sans-serif'>黑体</option>
+            <option value='"Courier New",monospace'>等宽</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label>对齐</label>
+          <select id="textAlign">
+            <option value="center" selected>居中</option>
+            <option value="left">左对齐</option>
+            <option value="right">右对齐</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label>自动缩小</label>
+          <select id="autoFit">
+            <option value="1" selected>开</option>
+            <option value="0">关</option>
+          </select>
+        </div>
+      </div>
+      <div class="info-text" id="textMeta" style="margin-top:8px"></div>
+    </div>
+
+    <div id="tab-image" class="tab-content">
+      <div class="upload-area" onclick="document.getElementById('imageFile').click()">
+        <input type="file" id="imageFile" accept="image/*">
+        <p>点击选择图片</p>
+      </div>
+      <div class="dither-row">
+        <label>抖动算法</label>
+        <select id="ditherMode">
+          <option value="threshold">阈值</option>
+          <option value="floyd" selected>Floyd-Steinberg</option>
+          <option value="atkinson">Atkinson</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">显示屏</div>
+    <div class="config-row">
+      <div class="control-group"><label>宽</label><input type="number" id="dispWidth" value="400" min="1" max="800"></div>
+      <div class="control-group"><label>高</label><input type="number" id="dispHeight" value="300" min="1" max="600"></div>
+      <div class="control-group">
+        <label>颜色</label>
+        <select id="colorMode">
+          <option value="bwr" selected>黑白红</option>
+          <option value="bw">黑白</option>
+        </select>
+      </div>
+      <div class="control-group" style="flex:0">
+        <label>&nbsp;</label>
+        <button class="btn" onclick="applyDisplayConfig()" style="padding:6px 10px;font-size:12px;">应用</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">蓝牙</div>
+    <div class="status-row">
+      <div class="dot" id="bleDot"></div>
+      <span id="bleStatusText">未连接</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="btnConnect" onclick="toggleConnect()">连接墨水屏</button>
+      <button class="btn primary" id="btnSend" onclick="sendToEPD()" disabled>推送到屏幕</button>
+    </div>
+    <div class="progress-wrap" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">关于</div>
+    <div class="info-text">
+      需要墨水屏运行 <code>EPD-nRF5</code> 固件（nRF51822 / nRF52810 / nRF52811）。
+      iOS 的 Safari 不支持 Web Bluetooth，请用 <code>Bluefy</code> 打开本页。<br><br>
+      每次使用：连接墨水屏 → 开始监听 → 在 AI 对话里说「发到墨水屏」。<br><br>
+      基于 <code>0xblewalker/eink-ble-writer</code>（GPL-3.0）改造。
+    </div>
+  </div>
+
+</div>
+
+<footer>墨水屏控制台 · GPL-3.0</footer>
+
+<script>
+// ============================================================
+// 协议常量
+// ============================================================
+const EPD_SERVICE = '62750001-d828-918d-fb46-b6c11c675aec';
+const EPD_CHAR    = '62750002-d828-918d-fb46-b6c11c675aec';
+const CMD_INIT    = 0x01;
+const CMD_WRITE   = 0x30;
+const CMD_REFRESH = 0x05;
+const RED_INK     = '#c80000';
+const PAD         = 16;
+
+// ============================================================
+// 状态
+// ============================================================
+let bleDevice = null, gattServer = null, epdChar = null;
+let mtuSize = 240;              // 已按 MTU - 2 计算
+let colorMode = 'bwr';
+let currentTab = 'text';
+let eventSource = null;
+let token = '';
+let sending = false;
+let pendingImageSend = false;
+
+const canvas = document.getElementById('preview');
+const ctx = canvas.getContext('2d');
+
+// ============================================================
+// 工具
+// ============================================================
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function log(msg, strong) {
+  const box = document.getElementById('sseLog');
+  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  const line = document.createElement('div');
+  line.innerHTML = `<b>${time}</b> ${strong ? '<b>' + msg + '</b>' : msg}`;
+  box.appendChild(line);
+  while (box.childNodes.length > 60) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ============================================================
+// 富文本解析：<r> <b> <i>，支持嵌套
+// ============================================================
+function parseRich(src) {
+  const pieces = String(src).split(/(<\/?[rbiRBI]>)/g);
+  const stack = { r: 0, b: 0, i: 0 };
+  const segs = [];
+  for (const piece of pieces) {
+    if (!piece) continue;
+    const open = /^<([rbiRBI])>$/.exec(piece);
+    const close = /^<\/([rbiRBI])>$/.exec(piece);
+    if (open) { stack[open[1].toLowerCase()]++; continue; }
+    if (close) { const k = close[1].toLowerCase(); stack[k] = Math.max(0, stack[k] - 1); continue; }
+    segs.push({ text: piece, red: stack.r > 0, bold: stack.b > 0, italic: stack.i > 0 });
+  }
+  return segs;
+}
+
+// 把富文本切成排版原子：ASCII 单词成组，中日韩等逐字，空格单独成原子
+function toAtoms(segs) {
+  const atoms = [];
+  for (const seg of segs) {
+    const parts = seg.text.split('\n');
+    parts.forEach((part, idx) => {
+      if (idx > 0) atoms.push({ br: true });
+      if (!part) return;
+      const chunks = part.match(/[A-Za-z0-9'’]+|\s+|[\s\S]/g) || [];
+      for (const c of chunks) {
+        atoms.push({ text: c, space: /^\s+$/.test(c), red: seg.red, bold: seg.bold, italic: seg.italic });
+      }
+    });
+  }
+  return atoms;
+}
+
+function fontOf(atom, size, family) {
+  const style = atom.italic ? 'italic ' : '';
+  const weight = atom.bold ? '700 ' : '';
+  return style + weight + size + 'px ' + family;
+}
+
+// 单个原子本身就宽过一行时（超长英文单词 / 一长串无空格字符），按字符硬拆
+function explodeAtoms(atoms, size, family, maxWidth) {
+  const out = [];
+  for (const a of atoms) {
+    if (a.br || a.space) { out.push(a); continue; }
+    ctx.font = fontOf(a, size, family);
+    if (ctx.measureText(a.text).width <= maxWidth) { out.push(a); continue; }
+    for (const ch of a.text) out.push({ ...a, text: ch });
+  }
+  return out;
+}
+
+// 按给定字号排版，返回 { lines, width, lineHeight, height }
+function layout(atoms, size, family, maxWidth) {
+  const lineHeight = Math.round(size * 1.45);
+  const lines = [];
+  let cur = { atoms: [], width: 0 };
+
+  for (const atom of explodeAtoms(atoms, size, family, maxWidth)) {
+    if (atom.br) { lines.push(cur); cur = { atoms: [], width: 0 }; continue; }
+    ctx.font = fontOf(atom, size, family);
+    const w = atom.space ? Math.round(size * 0.28) : ctx.measureText(atom.text).width;
+
+    if (atom.space && cur.width === 0) continue;              // 行首空格丢弃
+    if (cur.width + w > maxWidth && cur.atoms.length) {
+      lines.push(cur);
+      cur = { atoms: [], width: 0 };
+      if (atom.space) continue;                               // 断行处的空格丢弃
+    }
+    cur.atoms.push({ ...atom, w });
+    cur.width += w;
+  }
+  lines.push(cur);
+
+  const width = Math.max(0, ...lines.map(l => l.width));
+  return { lines, width, lineHeight, height: lines.length * lineHeight };
+}
+
+function renderText() {
+  const raw = document.getElementById('textInput').value;
+  const family = document.getElementById('fontFamily').value;
+  const align = document.getElementById('textAlign').value;
+  const baseSize = parseInt(document.getElementById('fontSize').value, 10);
+  const autoFit = document.getElementById('autoFit').value === '1';
+
+  const w = canvas.width, h = canvas.height;
+  const maxWidth = w - PAD * 2;
+  const maxHeight = h - PAD * 2;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+
+  const atoms = toAtoms(parseRich(raw));
+  if (!atoms.length) { document.getElementById('textMeta').textContent = ''; return; }
+
+  let size = baseSize;
+  let res = layout(atoms, size, family, maxWidth);
+  if (autoFit) {
+    // 装不下就逐号缩小，最低 12px
+    while (size > 12 && (res.height > maxHeight || res.width > maxWidth)) {
+      size -= 1;
+      res = layout(atoms, size, family, maxWidth);
+    }
+  }
+
+  const { lines, lineHeight, height } = res;
+  const startY = Math.max(PAD, (h - height) / 2);
+  ctx.textBaseline = 'middle';
+
+  let overflow = 0;
+  lines.forEach((line, i) => {
+    const y = startY + i * lineHeight + lineHeight / 2;
+    if (y > h - 4) { overflow++; return; }
+    let x = align === 'center' ? (w - line.width) / 2
+          : align === 'right'  ? w - PAD - line.width
+          : PAD;
+    for (const atom of line.atoms) {
+      ctx.font = fontOf(atom, size, family);
+      ctx.fillStyle = atom.red ? RED_INK : '#000000';
+      ctx.textAlign = 'left';
+      ctx.fillText(atom.text, x, y);
+      x += atom.w;
+    }
+  });
+
+  document.getElementById('textMeta').textContent =
+    `字号 ${size}px · 共 ${lines.length} 行${overflow ? ` · ${overflow} 行超出屏幕` : ''}`;
+}
+
+// ============================================================
+// 图片处理
+// ============================================================
+function loadImage(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = canvas.width, h = canvas.height;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+      const scale = Math.min(w / img.width, h / img.height);
+      const iw = img.width * scale, ih = img.height * scale;
+      ctx.drawImage(img, (w - iw) / 2, (h - ih) / 2, iw, ih);
+      applyDither();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function applyDither() {
+  const mode = document.getElementById('ditherMode').value;
+  const w = canvas.width, h = canvas.height;
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+  if (colorMode === 'bwr') quantizeThreeColor(data, w, h);
+  else ditherGray(data, w, h, mode);
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function ditherGray(data, w, h, mode) {
+  const gray = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) gray[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+  if (mode === 'floyd') floydSteinberg(gray, w, h);
+  else if (mode === 'atkinson') atkinsonDither(gray, w, h);
+  for (let i = 0; i < w * h; i++) {
+    const v = gray[i] >= 128 ? 255 : 0;
+    data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = v;
+  }
+}
+
+function quantizeThreeColor(data, w, h) {
+  for (let i = 0; i < w * h; i++) {
+    const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+    const isRed = r > 120 && r > g * 1.5 && r > b * 1.5;
+    let out;
+    if (isRed) out = [200, 0, 0];
+    else if (gray >= 128) out = [255, 255, 255];
+    else out = [0, 0, 0];
+    data[i * 4] = out[0]; data[i * 4 + 1] = out[1]; data[i * 4 + 2] = out[2];
+  }
+}
+
+function floydSteinberg(gray, w, h) {
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, old = gray[i], nv = old >= 128 ? 255 : 0;
+    gray[i] = nv;
+    const err = old - nv;
+    if (x + 1 < w) gray[i + 1] += err * 7 / 16;
+    if (y + 1 < h && x - 1 >= 0) gray[i + w - 1] += err * 3 / 16;
+    if (y + 1 < h) gray[i + w] += err * 5 / 16;
+    if (y + 1 < h && x + 1 < w) gray[i + w + 1] += err * 1 / 16;
+  }
+}
+
+function atkinsonDither(gray, w, h) {
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, old = gray[i], nv = old >= 128 ? 255 : 0;
+    gray[i] = nv;
+    const err = (old - nv) / 8;
+    if (x + 1 < w) gray[i + 1] += err;
+    if (x + 2 < w) gray[i + 2] += err;
+    if (y + 1 < h && x - 1 >= 0) gray[i + w - 1] += err;
+    if (y + 1 < h) gray[i + w] += err;
+    if (y + 1 < h && x + 1 < w) gray[i + w + 1] += err;
+    if (y + 2 < h) gray[i + 2 * w] += err;
+  }
+}
+
+// ============================================================
+// Canvas → 1bpp 位图
+// 黑白层：1=白 0=黑   红色层：0=红 1=非红
+// 非红像素逐位填 1，所以纯黑白内容天然得到整层 0xFF，不会出红噪点
+// ============================================================
+function canvasToEPD() {
+  const w = canvas.width, h = canvas.height;
+  const data = ctx.getImageData(0, 0, w, h).data;
+  const byteWidth = Math.ceil(w / 8);
+  const bw = new Uint8Array(byteWidth * h);
+  const red = new Uint8Array(byteWidth * h);
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+      const byteIdx = y * byteWidth + (x >> 3);
+      const bit = 7 - (x & 7);
+      if (gray >= 140) bw[byteIdx] |= (1 << bit);
+      const isRed = r > 160 && r > g && r > b;
+      if (!isRed) red[byteIdx] |= (1 << bit);
+    }
+  }
+  return { bw, red };
+}
+
+// ============================================================
+// 蓝牙
+// ============================================================
+async function requestDevice() {
+  try {
+    return await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'EPD-' }],
+      optionalServices: [EPD_SERVICE]
+    });
+  } catch (e) {
+    if (e && e.name === 'NotFoundError') throw e;   // 用户主动取消
+    // 名字前缀不匹配时退回全量扫描
+    return await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [EPD_SERVICE]
+    });
+  }
+}
+
+async function toggleConnect() {
+  if (gattServer && gattServer.connected) { bleDevice.gatt.disconnect(); return; }
+  if (!navigator.bluetooth) { setBleStatus('error', '此浏览器不支持 Web Bluetooth'); return; }
+  try {
+    setBleStatus('searching');
+    bleDevice = await requestDevice();
+    bleDevice.addEventListener('gattserverdisconnected', onDisconnect);
+    setBleStatus('connecting', bleDevice.name);
+    gattServer = await bleDevice.gatt.connect();
+    const service = await gattServer.getPrimaryService(EPD_SERVICE);
+    epdChar = await service.getCharacteristic(EPD_CHAR);
+
+    try {
+      await epdChar.startNotifications();
+      epdChar.addEventListener('characteristicvaluechanged', (e) => {
+        const msg = new TextDecoder().decode(new Uint8Array(e.target.value.buffer));
+        const m = /mtu=(\d+)/.exec(msg);
+        if (m) { mtuSize = Math.max(20, parseInt(m[1], 10) - 2); log(`MTU 协商完成，分块 ${mtuSize} 字节`); }
+      });
+    } catch (e) { /* 部分固件不支持通知 */ }
+
+    await writeCmd(CMD_INIT);
+    setBleStatus('connected', bleDevice.name);
+    document.getElementById('btnConnect').textContent = '断开连接';
+    document.getElementById('btnSend').disabled = false;
+  } catch (e) {
+    if (e && e.name === 'NotFoundError') setBleStatus('disconnected');
+    else setBleStatus('error', e.message || String(e));
+  }
+}
+
+function onDisconnect() {
+  setBleStatus('disconnected');
+  document.getElementById('btnConnect').textContent = '连接墨水屏';
+  document.getElementById('btnSend').disabled = true;
+  gattServer = null; epdChar = null;
+}
+
+async function writeCmd(cmd) {
+  if (!epdChar) return;
+  await epdChar.writeValueWithResponse(new Uint8Array([cmd]));
+}
+
+async function sendLayer(data, layerFlag, onChunk) {
+  for (let i = 0; i < data.length; i += mtuSize) {
+    const chunk = data.slice(i, i + mtuSize);
+    const flag = layerFlag | (i === 0 ? 0x00 : 0xF0);
+    await epdChar.writeValueWithResponse(new Uint8Array([CMD_WRITE, flag, ...chunk]));
+    onChunk();
+  }
+}
+
+async function sendToEPD(fromRemote) {
+  if (!epdChar) {
+    if (fromRemote) log('推送已收到，但蓝牙未连接 —— 请先连接墨水屏');
+    return;
+  }
+  if (sending) { pendingImageSend = true; return; }
+
+  sending = true;
+  const { bw, red } = canvasToEPD();
+  const useRed = colorMode === 'bwr';
+  const total = Math.ceil(bw.length / mtuSize) + (useRed ? Math.ceil(red.length / mtuSize) : 0);
+  let done = 0;
+
+  showProgress(true);
+  document.getElementById('btnSend').disabled = true;
+
+  try {
+    await writeCmd(CMD_INIT);
+    await sleep(200);
+    await sendLayer(bw, 0x0F, () => { done++; setProgress(done / total * 100); });
+    if (useRed) await sendLayer(red, 0x00, () => { done++; setProgress(done / total * 100); });
+    await writeCmd(CMD_REFRESH);
+    setProgress(100);
+    log(fromRemote ? '已推送到墨水屏（来自 AI 推送）' : '已推送到墨水屏', true);
+    setTimeout(() => showProgress(false), 2500);
+  } catch (e) {
+    setBleStatus('error', '写入失败：' + (e.message || e));
+    log('写入失败：' + (e.message || e));
+    showProgress(false);
+  }
+
+  sending = false;
+  document.getElementById('btnSend').disabled = false;
+  if (pendingImageSend) { pendingImageSend = false; sendToEPD(fromRemote); }
+}
+
+// ============================================================
+// SSE 监听
+// ============================================================
+function setSseStatus(state, detail) {
+  const dot = document.getElementById('sseDot');
+  const text = document.getElementById('sseStatusText');
+  dot.className = 'dot';
+  if (state === 'on') { dot.classList.add('on'); text.textContent = 'SSE ON · ' + (detail || '监听中'); }
+  else if (state === 'connecting') { dot.classList.add('warn'); text.textContent = '连接中…'; }
+  else if (state === 'retry') { dot.classList.add('warn'); text.textContent = '连接中断，重连中…'; }
+  else if (state === 'error') { dot.classList.add('warn'); text.textContent = '✗ ' + (detail || '错误'); }
+  else text.textContent = detail || '未监听';
+}
+
+function toggleListen() {
+  if (eventSource) { stopListen(); return; }
+  const input = document.getElementById('sseToken').value.trim();
+  if (!input) { log('请先填入 Token（与服务器 EINK_TOKEN 相同）'); setSseStatus('error', '缺少 Token'); return; }
+  token = input;
+  localStorage.setItem('eink_token', token);
+  startListen();
+}
+
+function startListen() {
+  stopListen(true);
+  setSseStatus('connecting');
+  log('正在连接推送服务器…');
+  eventSource = new EventSource('/events?token=' + encodeURIComponent(token));
+  document.getElementById('btnListen').textContent = '停止监听';
+
+  eventSource.addEventListener('ready', (e) => {
+    const d = JSON.parse(e.data);
+    setSseStatus('on', `在线手机 ${d.connected_phones ?? 1} 台`);
+    log('已连接，等待推送（当前屏幕内容：' + JSON.stringify(d.text) + '）');
+  });
+
+  eventSource.addEventListener('letter', (e) => {
+    const d = JSON.parse(e.data);
+    log(`收到推送 #${d.revision}：${JSON.stringify(d.text)}`, true);
+    document.getElementById('textInput').value = d.text || '';
+    renderText();
+    if (document.getElementById('autoSend').checked) sendToEPD(true);
+    else log('自动推送已关闭，内容已填入编辑器');
+  });
+
+  eventSource.onerror = () => {
+    if (eventSource && eventSource.readyState === EventSource.CONNECTING) setSseStatus('retry');
+    else if (eventSource) setSseStatus('error', 'SSE 连接失败');
+  };
+}
+
+function stopListen(silent) {
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  if (!silent) { setSseStatus('off'); log('已停止监听'); }
+  const btn = document.getElementById('btnListen');
+  if (btn) btn.textContent = '开始监听';
+}
+
+async function loadLatest() {
+  if (!token) return;
+  try {
+    const r = await fetch('/api/latest?token=' + encodeURIComponent(token));
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.text) {
+      document.getElementById('textInput').value = d.text;
+      renderText();
+      log('已载入服务器上的当前内容（第 ' + d.revision + ' 版）');
+    }
+  } catch (e) { /* 离线时忽略 */ }
+}
+
+// ============================================================
+// 界面
+// ============================================================
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach((t) => {
+    t.classList.toggle('active', (tab === 'text' && t.textContent.includes('文字')) || (tab === 'image' && t.textContent.includes('图片')));
+  });
+  document.querySelectorAll('.tab-content').forEach((tc) => tc.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab === 'text') renderText();
+}
+
+function applyDisplayConfig() {
+  const w = parseInt(document.getElementById('dispWidth').value, 10) || 400;
+  const h = parseInt(document.getElementById('dispHeight').value, 10) || 300;
+  colorMode = document.getElementById('colorMode').value;
+  canvas.width = w; canvas.height = h;
+  if (currentTab === 'text') renderText();
+  log(`显示屏尺寸设为 ${w} × ${h}`);
+}
+
+function setBleStatus(state, detail) {
+  const dot = document.getElementById('bleDot');
+  const text = document.getElementById('bleStatusText');
+  dot.className = 'dot';
+  if (state === 'searching') text.textContent = '搜索中…（选择 EPD-xxxx）';
+  else if (state === 'connecting') text.innerHTML = '连接中 <span class="mono">' + (detail || '') + '</span>';
+  else if (state === 'connected') { dot.classList.add('on'); text.innerHTML = '<span class="mono">' + detail + '</span>'; }
+  else if (state === 'error') { dot.classList.add('warn'); text.textContent = '✗ ' + (detail || '错误'); }
+  else text.textContent = '未连接';
+}
+
+function showProgress(show) {
+  document.getElementById('progressWrap').style.display = show ? 'block' : 'none';
+  if (!show) document.getElementById('progressBar').style.width = '0%';
+}
+function setProgress(pct) { document.getElementById('progressBar').style.width = pct + '%'; }
+
+// ============================================================
+// 事件绑定 & 初始化
+// ============================================================
+['textInput', 'fontSize', 'fontFamily', 'textAlign', 'autoFit'].forEach((id) => {
+  const el = document.getElementById(id);
+  el.addEventListener(id === 'textInput' ? 'input' : 'change', renderText);
+});
+document.getElementById('imageFile').addEventListener('change', (e) => { if (e.target.files[0]) loadImage(e.target.files[0]); });
+document.getElementById('ditherMode').addEventListener('change', () => {
+  const f = document.getElementById('imageFile').files[0];
+  if (f) loadImage(f);
+});
+
+(function init() {
+  // 支持用 https://你的域名/?token=xxx 一次性带参打开，省得每次手输
+  const url = new URL(location.href);
+  const fromUrl = url.searchParams.get('token');
+  const saved = fromUrl || localStorage.getItem('eink_token') || '';
+  if (fromUrl) {
+    localStorage.setItem('eink_token', fromUrl);
+    url.searchParams.delete('token');
+    history.replaceState({}, '', url.pathname + (url.search || ''));
+  }
+  if (saved) {
+    document.getElementById('sseToken').value = saved;
+    token = saved;
+    loadLatest().then(startListen);
+  } else {
+    log('请填入 Token 后点击「开始监听」');
+  }
+  renderText();
+})();
+</script>
+</body>
+</html>

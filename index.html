@@ -218,13 +218,20 @@
       <button class="btn" id="btnConnect" onclick="toggleConnect()">连接墨水屏</button>
       <button class="btn primary" id="btnSend" onclick="sendToEPD()" disabled>推送到屏幕</button>
     </div>
+    <label class="switch" style="margin-top:10px">
+      <input type="checkbox" id="chkShowAll" onchange="toggleDeviceFilter(this.checked)">
+      搜不到设备？列出全部蓝牙设备
+    </label>
     <div class="progress-wrap" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
   </div>
 
   <div class="card">
     <div class="card-label">关于</div>
     <div class="info-text">
-      需要墨水屏运行 <code>EPD-nRF5</code> 固件（nRF51822 / nRF52810 / nRF52811）。
+      需要墨水屏运行 <code>EPD-nRF5</code> 系列固件（nRF51822 / nRF52810 / nRF52811），
+      例如 <code>YCD12/EPD-nRF5_DYC</code>、<code>tsl0922/EPD-nRF5</code>。
+      设备广播名形如 <code>NRF_EPD_1A2B</code>，蓝牙列表里选这个名字的；
+      要是列表空的，勾上上面「列出全部蓝牙设备」再连。<br><br>
       iOS 的 Safari 不支持 Web Bluetooth，请用 <code>Bluefy</code> 打开本页。<br><br>
       每次使用：连接墨水屏 → 开始监听 → 在 AI 对话里说「发到墨水屏」。<br><br>
       <b>卡片版式</b>：内容整段以 <code>[card]</code> 开头即启用，共两套模板：<br>
@@ -249,6 +256,15 @@
 // ============================================================
 const EPD_SERVICE = '62750001-d828-918d-fb46-b6c11c675aec';
 const EPD_CHAR    = '62750002-d828-918d-fb46-b6c11c675aec';
+
+// 蓝牙设备名过滤器。filters 数组内是「或」关系，任一命中就显示。
+//   NRF_EPD —— EPD-nRF5 系列固件（YCD12/EPD-nRF5_DYC 等）的实际广播名，
+//              形如 NRF_EPD_1A2B：DEVICE_NAME "NRF_EPD" + MAC 后两字节
+//   EPD     —— 覆盖 EPD-xxxx / EPD_xxxx 这类写法（上游分支用的）
+// 注意：名字对不上时 Chrome 不会报错，只会给一个空列表 —— 所以必须有
+// 「显示全部蓝牙设备」这个开关兜底，别指望 catch 到异常再回退。
+const NAME_FILTERS = [{ namePrefix: 'NRF_EPD' }, { namePrefix: 'EPD' }];
+const SHOW_ALL_KEY = 'eink_show_all_devices';
 const CMD_INIT    = 0x01;
 const CMD_WRITE   = 0x30;
 const CMD_REFRESH = 0x05;
@@ -266,6 +282,7 @@ let eventSource = null;
 let token = '';
 let sending = false;
 let pendingImageSend = false;
+let showAllDevices = false;      // true = 不做名字过滤，列出附近全部蓝牙设备
 
 const canvas = document.getElementById('preview');
 const ctx = canvas.getContext('2d');
@@ -892,19 +909,27 @@ function canvasToEPD() {
 // 蓝牙
 // ============================================================
 async function requestDevice() {
-  try {
-    return await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: 'EPD-' }],
-      optionalServices: [EPD_SERVICE]
-    });
-  } catch (e) {
-    if (e && e.name === 'NotFoundError') throw e;   // 用户主动取消
-    // 名字前缀不匹配时退回全量扫描
-    return await navigator.bluetooth.requestDevice({
+  // acceptAllDevices 与 filters 不能同时出现，二选一
+  if (showAllDevices) {
+    return navigator.bluetooth.requestDevice({
       acceptAllDevices: true,
       optionalServices: [EPD_SERVICE]
     });
   }
+  return navigator.bluetooth.requestDevice({
+    filters: NAME_FILTERS,
+    optionalServices: [EPD_SERVICE]
+  });
+}
+
+function toggleDeviceFilter(on) {
+  showAllDevices = !!on;
+  const chk = document.getElementById('chkShowAll');
+  if (chk && chk.checked !== showAllDevices) chk.checked = showAllDevices;   // 双向同步，程序化调用也不跑偏
+  try { localStorage.setItem(SHOW_ALL_KEY, showAllDevices ? '1' : '0'); } catch (e) { /* 隐私模式写不了 */ }
+  log(showAllDevices
+    ? '设备过滤已关闭 —— 列表里会出现附近所有蓝牙设备，请挑名字形如 NRF_EPD_xxxx 的那个'
+    : '设备过滤已开启 —— 只列出 NRF_EPD / EPD 开头的设备');
 }
 
 async function toggleConnect() {
@@ -933,8 +958,13 @@ async function toggleConnect() {
     document.getElementById('btnConnect').textContent = '断开连接';
     document.getElementById('btnSend').disabled = false;
   } catch (e) {
-    if (e && e.name === 'NotFoundError') setBleStatus('disconnected');
-    else setBleStatus('error', e.message || String(e));
+    if (e && e.name === 'NotFoundError') {
+      // 用户点了取消，或列表里根本没有匹配设备 —— 两种都落到这里
+      setBleStatus('disconnected');
+      if (!showAllDevices) {
+        log('没找到设备？勾上「显示全部蓝牙设备」再连一次（固件广播名通常是 NRF_EPD_xxxx）', true);
+      }
+    } else setBleStatus('error', e.message || String(e));
   }
 }
 
@@ -1093,7 +1123,9 @@ function setBleStatus(state, detail) {
   const dot = document.getElementById('bleDot');
   const text = document.getElementById('bleStatusText');
   dot.className = 'dot';
-  if (state === 'searching') text.textContent = '搜索中…（选择 EPD-xxxx）';
+  if (state === 'searching') text.textContent = showAllDevices
+    ? '搜索中…（列出全部设备，选 NRF_EPD_xxxx）'
+    : '搜索中…（选 NRF_EPD_xxxx）';
   else if (state === 'connecting') text.innerHTML = '连接中 <span class="mono">' + (detail || '') + '</span>';
   else if (state === 'connected') { dot.classList.add('on'); text.innerHTML = '<span class="mono">' + detail + '</span>'; }
   else if (state === 'error') { dot.classList.add('warn'); text.textContent = '✗ ' + (detail || '错误'); }
@@ -1120,6 +1152,12 @@ document.getElementById('ditherMode').addEventListener('change', () => {
 });
 
 (function init() {
+  // 恢复上次的「显示全部设备」选择
+  try {
+    showAllDevices = localStorage.getItem(SHOW_ALL_KEY) === '1';
+  } catch (e) { showAllDevices = false; }
+  document.getElementById('chkShowAll').checked = showAllDevices;
+
   // 支持用 https://你的域名/?token=xxx 一次性带参打开，省得每次手输
   const url = new URL(location.href);
   const fromUrl = url.searchParams.get('token');
@@ -1136,6 +1174,7 @@ document.getElementById('ditherMode').addEventListener('change', () => {
   } else {
     log('请填入 Token 后点击「开始监听」');
   }
+  if (showAllDevices) log('设备过滤已关闭（沿用上次设置）—— 列表里挑名字形如 NRF_EPD_xxxx 的那个');
   renderText();
   watchDateRollover();      // 卡片里的 {today} 跨天自动更新
 })();

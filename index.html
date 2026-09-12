@@ -355,30 +355,43 @@ function explodeAtoms(atoms, size, family, maxWidth) {
   return out;
 }
 
-// 按给定字号排版，返回 { lines, width, lineHeight, height }
+// 行首禁则标点：这些字符不许出现在一行的开头（中文排版惯例）。
+// 命中时让它「悬挂」在上一行末尾 —— 全角标点右侧自带空白，
+// 把右侧空白压掉之后视觉上并不会顶到留白边界。
+const NO_LINE_START = '，。、；：？！）］｝〉》」』】〕·…—～,.!?;:)]}';
+const PUNCT_SQUEEZE = 0.6;     // 悬挂标点的判定宽度折算比例
+
+// 按给定字号排版，返回 { lines, width, advance, lineHeight, height }
+//   width   = 真实绘制宽度，用于居中/右对齐定位
+//   advance = 换行判定宽度（悬挂标点按压扁后的宽度计），用于自动缩放
 function layout(atoms, size, family, maxWidth) {
   const lineHeight = Math.round(size * 1.45);
   const lines = [];
-  let cur = { atoms: [], width: 0 };
+  let cur = { atoms: [], width: 0, advance: 0 };
 
   for (const atom of explodeAtoms(atoms, size, family, maxWidth)) {
-    if (atom.br) { lines.push(cur); cur = { atoms: [], width: 0 }; continue; }
+    if (atom.br) { lines.push(cur); cur = { atoms: [], width: 0, advance: 0 }; continue; }
     ctx.font = fontOf(atom, size, family);
     const w = atom.space ? Math.round(size * 0.28) : ctx.measureText(atom.text).width;
+    // 单个标点原子 = 可悬挂（不许起新行）
+    const hang = !atom.space && atom.text.length === 1 && NO_LINE_START.indexOf(atom.text) >= 0;
+    const step = hang ? Math.round(w * PUNCT_SQUEEZE) : w;
 
     if (atom.space && cur.width === 0) continue;              // 行首空格丢弃
-    if (cur.width + w > maxWidth && cur.atoms.length) {
+    if (cur.advance + step > maxWidth && cur.atoms.length && !hang) {
       lines.push(cur);
-      cur = { atoms: [], width: 0 };
+      cur = { atoms: [], width: 0, advance: 0 };
       if (atom.space) continue;                               // 断行处的空格丢弃
     }
-    cur.atoms.push({ ...atom, w });
+    cur.atoms.push({ ...atom, w, hang });
     cur.width += w;
+    cur.advance += step;
   }
   lines.push(cur);
 
   const width = Math.max(0, ...lines.map(l => l.width));
-  return { lines, width, lineHeight, height: lines.length * lineHeight };
+  const advance = Math.max(0, ...lines.map(l => l.advance));
+  return { lines, width, advance, lineHeight, height: lines.length * lineHeight };
 }
 
 function renderText() {
@@ -407,7 +420,7 @@ function renderText() {
   let res = layout(atoms, size, family, maxWidth);
   if (autoFit) {
     // 装不下就逐号缩小，最低 12px
-    while (size > 12 && (res.height > maxHeight || res.width > maxWidth)) {
+    while (size > 12 && (res.height > maxHeight || res.advance > maxWidth)) {
       size -= 1;
       res = layout(atoms, size, family, maxWidth);
     }
@@ -711,7 +724,7 @@ function renderCard(card) {
 
   if (atoms.length) {
     let res = layout(atoms, size, CARD_FONT, bodyMaxW);
-    while (size > 9 && (res.height > bodyMaxH || res.width > bodyMaxW)) {
+    while (size > 9 && (res.height > bodyMaxH || res.advance > bodyMaxW)) {
       size -= 1;
       res = layout(atoms, size, CARD_FONT, bodyMaxW);
     }

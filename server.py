@@ -206,6 +206,8 @@ mcp = MCPServer(
         "屏幕是 400x300、三色（黑/白/红），纯文本最多约 100 个字符，超出会被截断。"
         "内容支持简易富文本标签：<r>红色</r>、<b>加粗</b>、<i>斜体</i>，可嵌套。"
         "红色是屏幕上唯一的彩色，请克制使用。\n"
+        "想让内容更像一张信笺/卡片（居中衬线正文 + 上下红色分隔线 + 顶部星芒图标 +"
+        "页脚左日期右签名），把内容整段以 [card] 开头，具体格式见 push_to_eink 的说明。\n"
         "当用户说「发到墨水屏」「推到屏幕上」之类的话时，直接调用 push_to_eink。"
     ),
 )
@@ -219,7 +221,22 @@ _TRANSPORT_SECURITY = TransportSecuritySettings(enable_dns_rebinding_protection=
     description=(
         "把一段文字推送到用户的墨水屏。屏幕 400x300，建议 100 字符以内。"
         "支持 <r>红</r> / <b>粗</b> / <i>斜</i> 标签，可嵌套。"
-        "推送后手机会通过蓝牙自动刷新屏幕，约 10 秒生效。"
+        "推送后手机会通过蓝牙自动刷新屏幕，约 10 秒生效。\n"
+        "\n"
+        "【卡片版式】当用户想要「卡片」「信笺」「诗笺」「像照片里那种样式」的效果时，"
+        "把 text 整段以 [card] 开头，后面可跟可选的指令行，其余行都是正文。例如：\n"
+        "[card]\n"
+        "@icon sun\n"
+        "@footer 2026-09-12 | Claude\n"
+        "\n"
+        "Rain falls:\n"
+        "You carry me home.\n"
+        "\n"
+        "· @icon：顶部图标，sun（默认，红色星芒）/ heart / none\n"
+        "· @footer：页脚，用竖线分隔左右两栏；左边靠左、右边靠右（右侧会自动带一枚小星芒）\n"
+        "· 其余非 @ 开头的行都是正文，居中衬线显示并自动缩放\n"
+        "卡片是矢量绘制，汉字与细线都锐利，适合短诗、寄语、格言。"
+        "正文同样支持 <r>/<b>/<i> 标签。"
     )
 )
 async def push_to_eink(text: str, date: str | None = None) -> str:
@@ -227,7 +244,8 @@ async def push_to_eink(text: str, date: str | None = None) -> str:
 
     Args:
         text: 要显示的文字，建议 100 字符以内，可用 <r>/<b>/<i> 富文本标签。
-        date: 可选，显示在内容下方的日期，格式 YYYY-MM-DD；不传则用今天日期。
+              以 [card] 开头则启用卡片版式，另可用 @icon / @footer 指令行，其余行为正文。
+        date: 可选，日期，格式 YYYY-MM-DD。注意：卡片版式下日期请写在 @footer 里。
     """
     try:
         payload = state.update(text, date=date, source="mcp")

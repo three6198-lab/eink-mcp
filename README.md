@@ -78,19 +78,14 @@ Render → New → **Web Service**（不要选 Key Value / Postgres / Blueprint�
 
 #### 如果创建服务时被要求绑卡
 
-官方文档写「免费版不需要卡」，但实测：**注册时所用节点不干净的新账号会被风控要求绑一张卡**
-做反滥用验证（预授权 $1，验证后退回，免费额度内不产生费用）。判定挂在**账号**上——
-换浏览器、换 IP 登录同一个账号都不会改变结果。三条出路：
+部分新账号在创建 Web Service 时会被要求绑定一张信用卡做反滥用验证
+（仅 $1 预授权，验证后退回，免费额度内不产生费用）。这一判定挂在账号上，与浏览器无关。
 
-1. **绑卡**：手上有 Visa/MasterCard 双币卡时最省事，5 分钟收工。
-2. **用干净节点重新注册一个账号**（是重新注册，不是重新登录）：
-   注册全程挂着同一个干净节点、不切回国内；建议用**邮箱 + 密码**注册而不是 GitHub 登录。
-   如果新账号连接 GitHub 时提示已占用，去 GitHub → Settings → Applications → Render
-   移除旧授权再重连。
-3. **改用公开仓库部署，彻底绕开 GitHub 授权**：把仓库设为 Public，
-   New → Web Service → 选 **Public Git Repository** → 粘贴仓库地址。
-   代价：失去推送自动部署，改代码后要在 Render 里手动 Deploy 一次。
-   注意本项目的上游是 GPL-3.0，公开分发不违反许可证。
+如果不想绑卡，可以改用其他提供免费 HTTPS 托管的平台，或者先用内网穿透在本机把链路跑通，
+托管的事之后再处理。另外一个可以省掉麻烦的做法是：把仓库设为 **Public**，
+New → Web Service 时选 **Public Git Repository** 并直接粘贴仓库地址，
+这样就完全不需要 GitHub 授权（代价是失去推送自动部署）。
+本项目上游是 GPL-3.0，公开分发本身符合许可证要求。
 
 仓库是私有的：如果选仓库时列表里看不到 `eink-mcp`，去 GitHub → Settings → Applications → Render
 把仓库访问范围放开（Render 侧也有 "Configure account" 入口）。
@@ -113,7 +108,32 @@ Claude 自定义连接器都能直接用。等链路跑通再按下面绑域名�
 
 ---
 
-## 三、接进 Claude（自定义连接器）
+## 三、接进 AI 客户端
+
+### 3.1 WorkBuddy（本机 mcp.json）
+
+编辑 `~/.workbuddy/mcp.json`（Windows 上是 `C:\Users\<用户名>\.workbuddy\mcp.json`）。
+文件不存在就新建；已存在则只往 `mcpServers` 里加一项，不要覆盖其他条目：
+
+```json
+{
+  "mcpServers": {
+    "eink": {
+      "type": "http",
+      "url": "https://你的地址/mcp",
+      "headers": { "X-Eink-Token": "你的EINK_TOKEN" }
+    }
+  }
+}
+```
+
+保存后回到 WorkBuddy → 连接器 → **自定义连接器**，找到 `eink` 点「**信任**」启用
+（不点信任不生效）。然后新开一个对话说「看一下墨水屏状态」，
+若它调用了 `get_eink_status` 并返回屏幕内容，就是通了。
+
+> 用 `headers` 传 token 比塞在 URL 里干净；服务端 `Query` / `X-Eink-Token` / `Bearer` 三种都收。
+
+### 3.2 Claude（自定义连接器）
 
 Claude → Settings → **Connectors** → Add custom connector，填：
 
@@ -163,7 +183,8 @@ https://你的域名/mcp?token=你复制的EINK_TOKEN
 
 ### MCP 工具
 
-- **`push_to_eink(text, date?)`** — 推送文字。内容支持富文本标签。
+- **`push_to_eink(text, date?)`** — 推送文字。支持富文本标签；`text` 以 `[card]` 开头则
+  切换成**卡片版式**（见第七节）。
 - **`get_eink_status()`** — 看当前屏幕内容、更新时间、推送历史，以及**有没有手机在线**。
 
 > 没有手机在线时，`push_to_eink` 会明确告诉你「内容已入库但屏幕不会刷新」，
@@ -188,7 +209,38 @@ https://你的域名/mcp?token=你复制的EINK_TOKEN
 
 ---
 
-## 七、故障排查
+## 七、卡片版式（信笺样式）
+
+普通模式是「一整块文字、整体居中」。想让内容像一张真正的信笺——
+**上下各一条红色分隔线、顶部一枚红色星芒、居中衬线正文、页脚左边日期右边签名**——
+把内容整段以 `[card]` 开头即可：
+
+```
+[card]
+@icon sun
+@footer 2026-09-12 | Claude
+
+Rain falls:
+You carry me home.
+I have never been lighter.
+```
+
+| 指令 | 说明 |
+|---|---|
+| `@icon` | 顶部图标：`sun`（默认，红色星芒）/ `heart` / `none` |
+| `@footer` | 页脚。用 `\|` 分左右两栏：左边靠左、右边靠右（右侧会自动带一枚小星芒）；不写 `\|` 则整行靠左 |
+
+- 所有**非 `@` 开头**的行都是正文，**居中、衬线、自动缩放**，装不下会逐号缩小。
+- 正文里照常支持 `<r>` `<b>` `<i>` 标签。
+- 日期一般写在 `@footer` 左栏。`push_to_eink` 的 `date` 参数在卡片模式下不参与渲染。
+
+**为什么用矢量绘制而不是图片？** 图片要先抖动成 1-bit，汉字笔画和 1px 细线在 400×300 上
+会糊成一团噪点；卡片模式是把文字、线条、图标直接画到位图上，边缘是干净的整像素。
+在控制页点「填入卡片示例」可以立刻看到效果。
+
+---
+
+## 八、故障排查
 
 | 现象 | 原因与处理 |
 |---|---|
@@ -204,7 +256,7 @@ https://你的域名/mcp?token=你复制的EINK_TOKEN
 
 ---
 
-## 八、BLE 协议速查
+## 九、BLE 协议速查
 
 给需要自己写客户端的人：
 

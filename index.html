@@ -130,7 +130,7 @@
     </div>
 
     <div id="tab-text" class="tab-content active">
-      <textarea id="textInput" placeholder="输入内容…&#10;支持 &lt;r&gt;红&lt;/r&gt; &lt;b&gt;粗&lt;/b&gt; &lt;i&gt;斜&lt;/i&gt;，可嵌套" spellcheck="false">Hello, World!</textarea>
+      <textarea id="textInput" placeholder="输入内容…&#10;支持 &lt;r&gt;红&lt;/r&gt; &lt;b&gt;粗&lt;/b&gt; &lt;i&gt;斜&lt;/i&gt;，可嵌套&#10;整段以 [card] 开头 → 切换成卡片版式" spellcheck="false">Hello, World!</textarea>
       <div class="controls">
         <div class="control-group">
           <label>字号</label>
@@ -164,6 +164,10 @@
             <option value="0">关</option>
           </select>
         </div>
+      </div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn" onclick="fillCardSample()" style="font-size:12px;padding:8px">填入卡片示例</button>
+        <button class="btn" onclick="fillPlainSample()" style="font-size:12px;padding:8px">恢复普通文字</button>
       </div>
       <div class="info-text" id="textMeta" style="margin-top:8px"></div>
     </div>
@@ -222,6 +226,10 @@
       需要墨水屏运行 <code>EPD-nRF5</code> 固件（nRF51822 / nRF52810 / nRF52811）。
       iOS 的 Safari 不支持 Web Bluetooth，请用 <code>Bluefy</code> 打开本页。<br><br>
       每次使用：连接墨水屏 → 开始监听 → 在 AI 对话里说「发到墨水屏」。<br><br>
+      <b>卡片版式</b>：内容整段以 <code>[card]</code> 开头即启用，
+      可用 <code>@icon sun|heart|none</code> 指定顶部图标，
+      <code>@footer 日期 | 签名</code> 指定页脚（竖线左靠左、右靠右）。
+      卡片是矢量绘制，不是图片抖动，汉字和细线都锐利。<br><br>
       基于 <code>0xblewalker/eink-ble-writer</code>（GPL-3.0）改造。
     </div>
   </div>
@@ -353,6 +361,10 @@ function layout(atoms, size, family, maxWidth) {
 
 function renderText() {
   const raw = document.getElementById('textInput').value;
+
+  // 整段以 [card] 开头 → 走卡片版式（矢量绘制，不是图片抖动）
+  if (/^\s*\[card\]\s*$/im.test(raw)) { renderCard(parseCard(raw)); return; }
+
   const family = document.getElementById('fontFamily').value;
   const align = document.getElementById('textAlign').value;
   const baseSize = parseInt(document.getElementById('fontSize').value, 10);
@@ -400,6 +412,200 @@ function renderText() {
 
   document.getElementById('textMeta').textContent =
     `字号 ${size}px · 共 ${lines.length} 行${overflow ? ` · ${overflow} 行超出屏幕` : ''}`;
+}
+
+// ============================================================
+// 卡片版式（诗笺）
+//
+// 用矢量方式直接画到画布上，而不是把图片抖动成 1-bit ——
+// 汉字笔画和细线在 400x300 上抖动会糊成一团，直接绘制才是锐利的。
+//
+// 语法（整段以 [card] 开头即启用）：
+//   [card]
+//   @icon sun                        可选：sun | heart | none，默认 sun
+//   @footer 2026-09-12 | Claude      可选：竖线左边靠左、右边靠右；无竖线则整行靠左
+//   正文若干行……                      衬线、居中、自动缩放
+//
+// 正文里照常可用 <r>红</r> <b>粗</b> <i>斜</i>。
+// ============================================================
+
+const CARD_FONT = 'Georgia, "Times New Roman", "Songti SC", "Noto Serif CJK SC", serif';
+
+function parseCard(raw) {
+  const lines = String(raw).replace(/\r\n?/g, '\n').split('\n');
+  const body = [];
+  let icon = 'sun';
+  let footer = null;              // null 表示没写 @footer
+  let started = false;
+
+  for (const ln of lines) {
+    const t = ln.trim();
+    if (!started) { if (/^\[card\]$/i.test(t)) started = true; continue; }
+    if (t.charAt(0) === '@') {
+      const m = /^@([A-Za-z]+)\s*:?\s*(.*)$/.exec(t);
+      const key = m ? m[1].toLowerCase() : '';
+      const val = m ? m[2].trim() : '';
+      if (key === 'icon') { icon = val || 'none'; continue; }
+      if (key === 'footer') { footer = val; continue; }
+      // 不认识的 @ 行当正文处理，免得误吞内容
+    }
+    body.push(ln);
+  }
+
+  while (body.length && !body[0].trim()) body.shift();
+  while (body.length && !body[body.length - 1].trim()) body.pop();
+
+  let footerLeft = '', footerRight = '';
+  if (footer !== null) {
+    const i = footer.indexOf('|');
+    if (i >= 0) { footerLeft = footer.slice(0, i).trim(); footerRight = footer.slice(i + 1).trim(); }
+    else footerLeft = footer.trim();
+  }
+
+  return {
+    icon: String(icon).toLowerCase(),
+    body: body.join('\n'),
+    footerLeft, footerRight, hasFooter: footer !== null,
+  };
+}
+
+// 水平分隔线：用 fillRect 而非 stroke，避免抗锯齿把 1px 细线糊成灰边
+function drawRule(y, x1, x2, thickness, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(x1), Math.round(y), Math.max(1, Math.round(x2 - x1)), thickness);
+}
+
+// 星芒标记（照片里那个红色小花/太阳，Claude 的品牌形状）
+function drawBurst(cx, cy, outerR, rays, lw, color) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < rays; i++) {
+    const a = (Math.PI * 2 * i) / rays - Math.PI / 2;
+    const inner = outerR * (i % 2 === 0 ? 0.44 : 0.2);   // 长短交错，更像星芒而不是齿轮
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+    ctx.lineTo(cx + Math.cos(a) * outerR, cy + Math.sin(a) * outerR);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawHeart(cx, cy, r, color) {
+  const t = r / 10;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + 8 * t);
+  ctx.bezierCurveTo(cx - 12 * t, cy + 2 * t, cx - 9 * t, cy - 9 * t, cx, cy - 3 * t);
+  ctx.bezierCurveTo(cx + 9 * t, cy - 9 * t, cx + 12 * t, cy + 2 * t, cx, cy + 8 * t);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function renderCard(card) {
+  const w = canvas.width, h = canvas.height;
+  const M = Math.max(10, Math.round(w * 0.055));            // 信笺左右留白
+  const ruleY1 = Math.max(6, Math.round(h * 0.065));
+  const footerY = h - Math.max(8, Math.round(h * 0.085));
+  const ruleY2 = footerY - Math.max(8, Math.round(h * 0.055));
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+
+  drawRule(ruleY1, M, w - M, 1, RED_INK);
+
+  // ---- 顶部图标 ----
+  const hasIcon = !!card.icon && card.icon !== 'none';
+  const iconR = Math.max(4, Math.round(h * 0.037));
+  const iconCy = ruleY1 + iconR + Math.max(6, Math.round(h * 0.05));
+  if (hasIcon) {
+    if (card.icon === 'heart') drawHeart(w / 2, iconCy, iconR, RED_INK);
+    else drawBurst(w / 2, iconCy, iconR, 12, Math.max(1, Math.round(h * 0.0075)), RED_INK);
+  }
+
+  // ---- 正文：自动缩放 ----
+  const bodyTop = (hasIcon ? iconCy + iconR : ruleY1) + Math.max(6, Math.round(h * 0.045));
+  const bodyBottom = ruleY2 - Math.max(4, Math.round(h * 0.035));
+  const bodyMaxH = Math.max(10, bodyBottom - bodyTop);
+  const bodyMaxW = w - M * 2;
+
+  const atoms = toAtoms(parseRich(card.body));
+  let lines = [], lineHeight = 0;
+  let size = Math.max(12, Math.round(h * 0.1));
+
+  if (atoms.length) {
+    let res = layout(atoms, size, CARD_FONT, bodyMaxW);
+    while (size > 9 && (res.height > bodyMaxH || res.width > bodyMaxW)) {
+      size -= 1;
+      res = layout(atoms, size, CARD_FONT, bodyMaxW);
+    }
+    lines = res.lines;
+    lineHeight = res.lineHeight;
+
+    const startY = bodyTop + Math.max(0, (bodyMaxH - res.height) / 2);
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    lines.forEach((line, i) => {
+      const y = startY + i * lineHeight + lineHeight / 2;
+      if (y > bodyBottom + lineHeight) return;
+      let x = (w - line.width) / 2;
+      for (const atom of line.atoms) {
+        ctx.font = fontOf(atom, size, CARD_FONT);
+        ctx.fillStyle = atom.red ? RED_INK : '#000000';
+        ctx.fillText(atom.text, x, y);
+        x += atom.w;
+      }
+    });
+  }
+
+  drawRule(ruleY2, M, w - M, 1, RED_INK);
+
+  // ---- 页脚：左日期 / 右签名 ----
+  const fSize = Math.max(9, Math.round(h * 0.047));
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+
+  if (card.footerLeft) {
+    ctx.font = fSize + 'px ' + CARD_FONT;
+    ctx.fillStyle = '#000000';
+    ctx.fillText(card.footerLeft, M, footerY);
+  }
+  if (card.footerRight) {
+    const italicFont = 'italic ' + fSize + 'px ' + CARD_FONT;
+    ctx.font = italicFont;
+    const tw = ctx.measureText(card.footerRight).width;
+    const rightEnd = w - M;
+    const r = Math.max(3, Math.round(h * 0.023));
+    const gap = Math.max(3, Math.round(r * 1.2));
+    const iconCx = rightEnd - tw - gap - r;
+    if (iconCx - r > M) drawBurst(iconCx, footerY, r, 8, Math.max(1, Math.round(r * 0.26)), RED_INK);
+    ctx.font = italicFont;
+    ctx.fillStyle = RED_INK;
+    ctx.fillText(card.footerRight, rightEnd - tw, footerY);
+  }
+
+  document.getElementById('textMeta').textContent =
+    `卡片版式 · 正文字号 ${size}px · ${lines.length} 行 · 图标 ${card.icon}` +
+    (card.hasFooter ? ` · 页脚「${card.footerLeft}${card.footerRight ? ' | ' + card.footerRight : ''}」` : '');
+}
+
+function cardSample() {
+  const today = new Date().toLocaleDateString('sv-SE');     // sv-SE 正好是 YYYY-MM-DD
+  return '[card]\n@icon sun\n@footer ' + today + ' | Claude\n\n'
+    + 'Rain falls:\nYou carry me home.\nI have never been lighter.\n';
+}
+
+function fillCardSample() {
+  document.getElementById('textInput').value = cardSample();
+  renderText();
+}
+
+function fillPlainSample() {
+  document.getElementById('textInput').value = 'Hello, World!';
+  renderText();
 }
 
 // ============================================================

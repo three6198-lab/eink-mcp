@@ -226,15 +226,18 @@ _TRANSPORT_SECURITY = TransportSecuritySettings(enable_dns_rebinding_protection=
         "【卡片版式】当用户想要「卡片」「信笺」「诗笺」「像照片里那种样式」的效果时，"
         "把 text 整段以 [card] 开头，后面可跟可选的指令行，其余行都是正文。例如：\n"
         "[card]\n"
-        "@icon sun\n"
-        "@footer 2026-09-12 | Claude\n"
+        "@icon claude\n"
+        "@footer {today} | Claude\n"
         "\n"
         "Rain falls:\n"
         "You carry me home.\n"
         "\n"
-        "· @icon：顶部图标，sun（默认，红色星芒）/ heart / none\n"
-        "· @footer：页脚，用竖线分隔左右两栏；左边靠左、右边靠右（右侧会自动带一枚小星芒）\n"
+        "· @icon：顶部图标，claude（默认，红色星芒标识）/ star / heart / none\n"
+        "· @footer：页脚，用竖线分隔左右两栏；左边靠左、右边靠右（右侧会自动带一枚小星芒标识）。"
+        "只写 @footer 不给值时，左栏自动填当天日期\n"
         "· 其余非 @ 开头的行都是正文，居中衬线显示并自动缩放\n"
+        "· 正文和页脚里都可以写 {today}（或 {date}），渲染时替换成当天日期。"
+        "需要显示日期时一律写 {today}，不要写死具体日期 —— 写死了明天屏幕上还是旧日期\n"
         "卡片是矢量绘制，汉字与细线都锐利，适合短诗、寄语、格言。"
         "正文同样支持 <r>/<b>/<i> 标签。"
     )
@@ -245,7 +248,8 @@ async def push_to_eink(text: str, date: str | None = None) -> str:
     Args:
         text: 要显示的文字，建议 100 字符以内，可用 <r>/<b>/<i> 富文本标签。
               以 [card] 开头则启用卡片版式，另可用 @icon / @footer 指令行，其余行为正文。
-        date: 可选，日期，格式 YYYY-MM-DD。注意：卡片版式下日期请写在 @footer 里。
+              卡片里要显示日期请写 {today}，它会在渲染时替换成当天日期。
+        date: 可选，日期，格式 YYYY-MM-DD；不传则用今天。注意：卡片版式下日期请写在 @footer 里。
     """
     try:
         payload = state.update(text, date=date, source="mcp")

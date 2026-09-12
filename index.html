@@ -227,8 +227,9 @@
       iOS 的 Safari 不支持 Web Bluetooth，请用 <code>Bluefy</code> 打开本页。<br><br>
       每次使用：连接墨水屏 → 开始监听 → 在 AI 对话里说「发到墨水屏」。<br><br>
       <b>卡片版式</b>：内容整段以 <code>[card]</code> 开头即启用，
-      可用 <code>@icon sun|heart|none</code> 指定顶部图标，
-      <code>@footer 日期 | 签名</code> 指定页脚（竖线左靠左、右靠右）。
+      可用 <code>@icon claude|star|heart|none</code> 指定顶部图标（<code>claude</code> 为默认的星芒标识），
+      <code>@footer 日期 | 签名</code> 指定页脚（竖线左靠左、右靠右；只写 <code>@footer</code> 则左栏自动填当天日期）。<br>
+      日期写 <code>{today}</code> 而不是写死的日期，跨天会自动更新。
       卡片是矢量绘制，不是图片抖动，汉字和细线都锐利。<br><br>
       基于 <code>0xblewalker/eink-ble-writer</code>（GPL-3.0）改造。
     </div>
@@ -361,6 +362,7 @@ function layout(atoms, size, family, maxWidth) {
 
 function renderText() {
   const raw = document.getElementById('textInput').value;
+  renderedDate = fmtToday();       // 记录本次渲染对应的日期，供跨天自动重绘比对
 
   // 整段以 [card] 开头 → 走卡片版式（矢量绘制，不是图片抖动）
   if (/^\s*\[card\]\s*$/im.test(raw)) { renderCard(parseCard(raw)); return; }
@@ -422,21 +424,77 @@ function renderText() {
 //
 // 语法（整段以 [card] 开头即启用）：
 //   [card]
-//   @icon sun                        可选：sun | heart | none，默认 sun
-//   @footer 2026-09-12 | Claude      可选：竖线左边靠左、右边靠右；无竖线则整行靠左
+//   @icon claude                     可选：claude(默认) | star | heart | none；sun 等同 claude
+//   @footer {today} | Claude         可选：竖线左边靠左、右边靠右；只写 @footer 则左栏自动填当天日期
 //   正文若干行……                      衬线、居中、自动缩放
 //
+// 正文和页脚里都可以写 {today} 或 {date}，渲染时替换成当天日期（本地时区，YYYY-MM-DD）。
+// 因为是「渲染时」才替换，卡片不用重新推送也能一直显示当天日期。
 // 正文里照常可用 <r>红</r> <b>粗</b> <i>斜</i>。
 // ============================================================
 
 const CARD_FONT = 'Georgia, "Times New Roman", "Songti SC", "Noto Serif CJK SC", serif';
 
+// Claude 星芒（Anthropic 品牌标识）的官方矢量轮廓，viewBox 0 0 24 24。
+// 实测其外接框正好铺满 24x24、中心在 (12,12)，所以直接按 2r/24 缩放即可，不用再做偏移补偿。
+// 用它而不是「12 条线段」的近似画法：官方图形每根射线都是带斜切端头的楔形，
+// 角度和长度也都不均匀，线段画法在同样尺寸下明显更散、更不像。
+const CLAUDE_MARK_D = 'm4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z';
+
+let claudeMark = undefined;          // undefined = 还没试过；null = 环境不支持
+function getClaudeMark() {
+  if (claudeMark !== undefined) return claudeMark;
+  try { claudeMark = (typeof Path2D === 'function') ? new Path2D(CLAUDE_MARK_D) : null; }
+  catch (e) { claudeMark = null; }
+  return claudeMark;
+}
+
+// 把官方星芒填进以 (cx,cy) 为中心、半径 r 的方形区域内。
+// 环境不支持 Path2D 时返回 false，由调用方回退到几何画法。
+function drawClaudeMark(cx, cy, r, color) {
+  const p = getClaudeMark();
+  if (!p) return false;
+  ctx.save();
+  ctx.fillStyle = color;
+  const s = (r * 2) / 24;
+  ctx.translate(cx - 12 * s, cy - 12 * s);
+  ctx.scale(s, s);
+  ctx.fill(p);
+  ctx.restore();
+  return true;
+}
+
+// 顶部/页脚图标分发：claude(默认) | star | heart | none
+function drawCardIcon(kind, cx, cy, r) {
+  if (kind === 'heart') { drawHeart(cx, cy, r, RED_INK); return; }
+  if (kind === 'star' || kind === 'burst') { drawBurst(cx, cy, r, 12, Math.max(1, Math.round(r * 0.1)), RED_INK); return; }
+  if (drawClaudeMark(cx, cy, r, RED_INK)) return;      // claude / sun / 其它未知值
+  drawBurst(cx, cy, r, 12, Math.max(1, Math.round(r * 0.1)), RED_INK);
+}
+
+// 当天日期（本地时区，YYYY-MM-DD）。不用 toLocaleDateString('sv-SE') 那类小技巧，
+// 手写补零不依赖运行时 locale 数据，稳。
+function fmtToday() {
+  const d = new Date();
+  const p = (n) => (n < 10 ? '0' : '') + n;
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+// 把 {today} / {date} 换成渲染当天的日期
+function applyDateTokens(s) {
+  return String(s == null ? '' : s).replace(/\{(?:today|date)\}/gi, fmtToday());
+}
+
+// 已渲染内容对应的日期，用于跨天自动重绘
+let renderedDate = '';
+
 function parseCard(raw) {
   const lines = String(raw).replace(/\r\n?/g, '\n').split('\n');
   const body = [];
-  let icon = 'sun';
+  let icon = 'claude';
   let footer = null;              // null 表示没写 @footer
   let started = false;
+  const usesToday = /\{(?:today|date)\}/i.test(raw);
 
   for (const ln of lines) {
     const t = ln.trim();
@@ -446,7 +504,8 @@ function parseCard(raw) {
       const key = m ? m[1].toLowerCase() : '';
       const val = m ? m[2].trim() : '';
       if (key === 'icon') { icon = val || 'none'; continue; }
-      if (key === 'footer') { footer = val; continue; }
+      // 只写 @footer、不给值的，左栏自动填当天日期
+      if (key === 'footer') { footer = val || '{today}'; continue; }
       // 不认识的 @ 行当正文处理，免得误吞内容
     }
     body.push(ln);
@@ -464,8 +523,11 @@ function parseCard(raw) {
 
   return {
     icon: String(icon).toLowerCase(),
-    body: body.join('\n'),
-    footerLeft, footerRight, hasFooter: footer !== null,
+    body: applyDateTokens(body.join('\n')),
+    footerLeft: applyDateTokens(footerLeft),
+    footerRight: applyDateTokens(footerRight),
+    hasFooter: footer !== null,
+    usesToday: usesToday,
   };
 }
 
@@ -519,12 +581,9 @@ function renderCard(card) {
 
   // ---- 顶部图标 ----
   const hasIcon = !!card.icon && card.icon !== 'none';
-  const iconR = Math.max(4, Math.round(h * 0.037));
+  const iconR = Math.max(5, Math.round(h * 0.065));
   const iconCy = ruleY1 + iconR + Math.max(6, Math.round(h * 0.05));
-  if (hasIcon) {
-    if (card.icon === 'heart') drawHeart(w / 2, iconCy, iconR, RED_INK);
-    else drawBurst(w / 2, iconCy, iconR, 12, Math.max(1, Math.round(h * 0.0075)), RED_INK);
-  }
+  if (hasIcon) drawCardIcon(card.icon, w / 2, iconCy, iconR);
 
   // ---- 正文：自动缩放 ----
   const bodyTop = (hasIcon ? iconCy + iconR : ruleY1) + Math.max(6, Math.round(h * 0.045));
@@ -578,10 +637,10 @@ function renderCard(card) {
     ctx.font = italicFont;
     const tw = ctx.measureText(card.footerRight).width;
     const rightEnd = w - M;
-    const r = Math.max(3, Math.round(h * 0.023));
+    const r = Math.max(4, Math.round(h * 0.028));
     const gap = Math.max(3, Math.round(r * 1.2));
     const iconCx = rightEnd - tw - gap - r;
-    if (iconCx - r > M) drawBurst(iconCx, footerY, r, 8, Math.max(1, Math.round(r * 0.26)), RED_INK);
+    if (iconCx - r > M) drawCardIcon('claude', iconCx, footerY, r);
     ctx.font = italicFont;
     ctx.fillStyle = RED_INK;
     ctx.fillText(card.footerRight, rightEnd - tw, footerY);
@@ -589,18 +648,31 @@ function renderCard(card) {
 
   document.getElementById('textMeta').textContent =
     `卡片版式 · 正文字号 ${size}px · ${lines.length} 行 · 图标 ${card.icon}` +
-    (card.hasFooter ? ` · 页脚「${card.footerLeft}${card.footerRight ? ' | ' + card.footerRight : ''}」` : '');
+    (card.hasFooter ? ` · 页脚「${card.footerLeft}${card.footerRight ? ' | ' + card.footerRight : ''}」` : '') +
+    (card.usesToday ? ` · {today} → ${fmtToday()}` : '');
 }
 
 function cardSample() {
-  const today = new Date().toLocaleDateString('sv-SE');     // sv-SE 正好是 YYYY-MM-DD
-  return '[card]\n@icon sun\n@footer ' + today + ' | Claude\n\n'
+  return '[card]\n@icon claude\n@footer {today} | Claude\n\n'
     + 'Rain falls:\nYou carry me home.\nI have never been lighter.\n';
 }
 
 function fillCardSample() {
   document.getElementById('textInput').value = cardSample();
   renderText();
+}
+
+// 日期占位符跨天自动更新：每分钟对一次表，发现跨天且当前内容确实用到 {today} 就重绘。
+// 只重绘预览，不会自动往屏幕推 —— 想让屏幕也换日期，重新说一句「发到墨水屏」即可。
+function watchDateRollover() {
+  setInterval(() => {
+    const now = fmtToday();
+    if (now === renderedDate) return;
+    if (!/\{(?:today|date)\}/i.test(document.getElementById('textInput').value)) { renderedDate = now; return; }
+    if (currentTab === 'text') renderText();
+    renderedDate = now;
+    log('已跨天，日期自动更新为 ' + now);
+  }, 60000);
 }
 
 function fillPlainSample() {
@@ -965,6 +1037,7 @@ document.getElementById('ditherMode').addEventListener('change', () => {
     log('请填入 Token 后点击「开始监听」');
   }
   renderText();
+  watchDateRollover();      // 卡片里的 {today} 跨天自动更新
 })();
 </script>
 </body>
